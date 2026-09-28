@@ -6,7 +6,6 @@ indicator("Clean Trading Signal Indicator", overlay=true, max_labels_count=100, 
 // ====================================================
 showFibLevels    = input.bool(true,  "Show Fibonacci Retracement")
 showSignalInfo   = input.bool(true,  "Show Signal Info Label")
-useATRFilter     = input.bool(true,  "Use ATR Volatility Filter")
 
 ema30Len = input.int(30, "EMA 30")
 ema35Len = input.int(35, "EMA 35")
@@ -32,10 +31,10 @@ tp6Pct = input.float(3.8, "TP6 %", step=0.25)
 slPct  = input.float(1.0, "SL %", step=0.25)
 
 // ====================================================
-// Background Indicators (NO PLOTTING)
+// Core Indicators
 // ====================================================
 
-// EMA stack
+// EMA Stack
 ema30 = ta.ema(close, ema30Len)
 ema35 = ta.ema(close, ema35Len)
 ema40 = ta.ema(close, ema40Len)
@@ -43,69 +42,46 @@ ema45 = ta.ema(close, ema45Len)
 ema50 = ta.ema(close, ema50Len)
 ema60 = ta.ema(close, ema60Len)
 
-bullishEMA = ema30 > ema35 and ema35 > ema40 and ema40 > ema45 and ema45 > ema50 and ema50 > ema60
-bearishEMA = ema30 < ema35 and ema35 < ema40 and ema40 < ema45 and ema45 < ema50 and ema50 < ema60
+bullishAligned = ema30 > ema35 and ema35 > ema40 and ema40 > ema45 and ema45 > ema50 and ema50 > ema60
+bearishAligned = ema30 < ema35 and ema35 < ema40 and ema40 < ema45 and ema45 < ema50 and ema50 < ema60
+
+// Price above or below EMA
+priceAboveEMA = close > ema30
+priceBelowEMA = close < ema30
 
 // RSI
 rsi14 = ta.rsi(close, rsiLen)
-rsiBullish = rsi14 > 55 and rsi14 < 75
-rsiBearish = rsi14 < 45 and rsi14 > 25
+rsiBullish = rsi14 > 50 and rsi14 < 80
+rsiBearish = rsi14 < 50 and rsi14 > 20
 
 // MACD
 [macdLine, signalLine, histLine] = ta.macd(close, macdFast, macdSlow, macdSig)
-macdBullish = macdLine > signalLine and histLine > 0
-macdBearish = macdLine < signalLine and histLine < 0
+macdBull = macdLine > signalLine
+macdBear = macdLine < signalLine
 
-// ATR
+// ATR for volatility
 atr14 = ta.atr(atrLen)
-maAtr = ta.ema(atr14, 20)
-atrFilter = useATRFilter ? atr14 > maAtr * 0.65 : true
-
-// Price Action
-bodySize = math.abs(close - open)
-ema20 = ta.ema(close, 20)
-priceBullishAction = close > open and bodySize > atr14 * 0.7 and close > ema20
-priceBearishAction = close < open and bodySize > atr14 * 0.7 and close < ema20
-
-// Liquidity Sweep
-recentSwingHigh = ta.highest(high, 25)
-recentSwingLow  = ta.lowest(low, 25)
-recentHighBreak = high > recentSwingHigh[1] and close < recentSwingHigh[1]
-recentLowBreak  = low < recentSwingLow[1] and close > recentSwingLow[1]
-liquiditySweepBull = recentLowBreak and close > open and close > ema30
-liquiditySweepBear = recentHighBreak and close < open and close < ema30
+atrEma = ta.ema(atr14, 20)
 
 // VWAP
 vwapPrice = ta.vwap
-volumeStrength = (close - vwapPrice) / atr14
 
-// Supertrend (Background only)
-atrSuper = ta.atr(10)
-mult = 2.0
-hl2Val = (high + low) / 2.0
-basicUpper = hl2Val + mult * atrSuper
-basicLower = hl2Val - mult * atrSuper
+// Price Action - Body size
+bodySize = math.abs(close - open)
+bullishBar = close > open and bodySize > atr14 * 0.5
+bearishBar = close < open and bodySize > atr14 * 0.5
 
-var float finalUpper = na
-var float finalLower = na
+// Momentum
+ema20 = ta.ema(close, 20)
+priceAboveEMA20 = close > ema20
+priceBelowEMA20 = close < ema20
 
-if bar_index == 0
-    finalUpper := basicUpper
-    finalLower := basicLower
-else
-    if basicUpper > finalUpper[1] and close[1] <= finalUpper[1]
-        finalUpper := basicUpper
-    if basicLower < finalLower[1] and close[1] >= finalLower[1]
-        finalLower := basicLower
-
-var int superTrend = 1
-if close > finalUpper[1]
-    superTrend := 1
-else if close < finalLower[1]
-    superTrend := -1
+// Support / Resistance
+recent_high = ta.highest(high, 20)
+recent_low = ta.lowest(low, 20)
 
 // ====================================================
-// FIBONACCI RETRACEMENT (ONLY VISUAL ON CHART)
+// FIBONACCI RETRACEMENT
 // ====================================================
 fibHigh = ta.highest(high, fibLookback)
 fibLow  = ta.lowest(low, fibLookback)
@@ -121,25 +97,37 @@ if showFibLevels and barstate.islast
                   xloc.bar_index, yloc.price, color=color.new(color.gray, 0), textcolor=color.white, style=label.style_label_left, size=size.small)
 
 // ====================================================
-// SIGNAL GENERATION (ALL LOGIC)
+// SIGNAL GENERATION - BALANCED APPROACH
 // ====================================================
-longSignal  = bullishEMA and rsiBullish and macdBullish and close > ema30 and close > vwapPrice and atrFilter and (priceBullishAction or liquiditySweepBull) and superTrend == 1
-shortSignal = bearishEMA and rsiBearish and macdBearish and close < ema30 and close < vwapPrice and atrFilter and (priceBearishAction or liquiditySweepBear) and superTrend == -1
 
-// Signal Score
+// Long Signal: More achievable conditions
+longCondition1 = (bullishAligned or priceAboveEMA) and macdBull and priceAboveEMA20
+longCondition2 = macdBull and rsiBullish and bullishBar and priceAboveEMA20
+longCondition3 = bullishAligned and macdBull and priceAboveEMA and close > vwapPrice
+
+longSignal = longCondition1 or longCondition2 or longCondition3
+
+// Short Signal: More achievable conditions
+shortCondition1 = (bearishAligned or priceBelowEMA) and macdBear and priceBelowEMA20
+shortCondition2 = macdBear and rsiBearish and bearishBar and priceBelowEMA20
+shortCondition3 = bearishAligned and macdBear and priceBelowEMA and close < vwapPrice
+
+shortSignal = shortCondition1 or shortCondition2 or shortCondition3
+
+// Signal Score for confidence
 signalScore = 0
-signalScore += bullishEMA ? 25 : 0
-signalScore += bearishEMA ? 25 : 0
-signalScore += rsiBullish ? 15 : rsiBearish ? 15 : 0
-signalScore += macdBullish ? 15 : macdBearish ? 15 : 0
-signalScore += atrFilter ? 10 : 0
-signalScore += close > vwapPrice ? 10 : close < vwapPrice ? 10 : 0
+signalScore += bullishAligned or bearishAligned ? 25 : 0
+signalScore += rsiBullish or rsiBearish ? 15 : 0
+signalScore += macdBull or macdBear ? 20 : 0
+signalScore += priceAboveEMA20 or priceBelowEMA20 ? 15 : 0
+signalScore += bullishBar or bearishBar ? 10 : 0
+signalScore += close > vwapPrice or close < vwapPrice ? 10 : 0
 
-precisionModel = signalScore >= 70 ? "High Probability" : signalScore >= 50 ? "Medium Probability" : "Low Confidence"
+precisionModel = signalScore >= 75 ? "High Probability" : signalScore >= 50 ? "Medium Probability" : "Moderate Confidence"
 
-// ====================================================
-// DYNAMIC TP / SL CALCULATION
-// ====================================================
+// Avoid too many consecutive signals
+var int lastSignalBar = -100
+
 var float longTP1 = na
 var float longTP2 = na
 var float longTP3 = na
@@ -156,7 +144,7 @@ var float shortTP5 = na
 var float shortTP6 = na
 var float shortSL  = na
 
-if longSignal
+if longSignal and (bar_index - lastSignalBar) > 5
     longTP1 := close * (1 + tp1Pct / 100)
     longTP2 := close * (1 + tp2Pct / 100)
     longTP3 := close * (1 + tp3Pct / 100)
@@ -164,8 +152,9 @@ if longSignal
     longTP5 := close * (1 + tp5Pct / 100)
     longTP6 := close * (1 + tp6Pct / 100)
     longSL  := close * (1 - slPct / 100)
+    lastSignalBar := bar_index
 
-if shortSignal
+if shortSignal and (bar_index - lastSignalBar) > 5
     shortTP1 := close * (1 - tp1Pct / 100)
     shortTP2 := close * (1 - tp2Pct / 100)
     shortTP3 := close * (1 - tp3Pct / 100)
@@ -173,37 +162,40 @@ if shortSignal
     shortTP5 := close * (1 - tp5Pct / 100)
     shortTP6 := close * (1 - tp6Pct / 100)
     shortSL  := close * (1 + slPct / 100)
+    lastSignalBar := bar_index
 
 // ====================================================
-// CLEAN CHART: ONLY BUY/SELL SIGNALS + FIBONACCI
+// PLOT SIGNALS
 // ====================================================
-plotshape(longSignal, title="Buy Signal", style=shape.labelup, location=location.belowbar, color=color.new(color.lime, 0), text="BUY", textcolor=color.white, size=size.large)
-plotshape(shortSignal, title="Sell Signal", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.large)
+plotshape(longSignal and (bar_index - lastSignalBar) == 0, title="Buy Signal", style=shape.labelup, location=location.belowbar, color=color.new(color.lime, 0), text="BUY", textcolor=color.white, size=size.large)
+plotshape(shortSignal and (bar_index - lastSignalBar) == 0, title="Sell Signal", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.large)
 
 // ====================================================
-// SIGNAL INFO LABEL (Optional)
+// SIGNAL INFO LABEL
 // ====================================================
-if showSignalInfo and barstate.islast and (longSignal or shortSignal)
-    if longSignal
+if showSignalInfo and barstate.islast and ((longSignal and (bar_index - lastSignalBar) == 0) or (shortSignal and (bar_index - lastSignalBar) == 0))
+    if longSignal and (bar_index - lastSignalBar) == 0
         label.new(bar_index, close + atr14 * 0.5,
                   "🔼 BUY\nEntry: " + str.tostring(close, format.mintick) +
                   "\nSL: " + str.tostring(longSL, format.mintick) +
                   "\nTP1: " + str.tostring(longTP1, format.mintick) +
                   "\nTP6: " + str.tostring(longTP6, format.mintick) +
+                  "\nRSI: " + str.tostring(rsi14, "#.##") +
                   "\nConfidence: " + precisionModel,
                   style=label.style_label_down, color=color.new(color.lime, 0), textcolor=color.white, size=size.small)
 
-    if shortSignal
+    if shortSignal and (bar_index - lastSignalBar) == 0
         label.new(bar_index, close - atr14 * 0.5,
                   "🔽 SELL\nEntry: " + str.tostring(close, format.mintick) +
                   "\nSL: " + str.tostring(shortSL, format.mintick) +
                   "\nTP1: " + str.tostring(shortTP1, format.mintick) +
                   "\nTP6: " + str.tostring(shortTP6, format.mintick) +
+                  "\nRSI: " + str.tostring(rsi14, "#.##") +
                   "\nConfidence: " + precisionModel,
                   style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
 
 // ====================================================
 // ALERTS
 // ====================================================
-alertcondition(longSignal, title="Long Signal", message="🔼 BUY Signal - Entry: {{close}}, SL: {{close * (1 - slPct / 100)}}")
-alertcondition(shortSignal, title="Short Signal", message="🔽 SELL Signal - Entry: {{close}}, SL: {{close * (1 + slPct / 100)}}")
+alertcondition(longSignal and (bar_index - lastSignalBar) == 0, title="Long Signal", message="🔼 BUY - Entry: {{close}}")
+alertcondition(shortSignal and (bar_index - lastSignalBar) == 0, title="Short Signal", message="🔽 SELL - Entry: {{close}}")
