@@ -1,0 +1,318 @@
+//@version=6
+indicator("Advanced Multi-Timeframe Trading Indicator", overlay=true, max_labels_count=500, max_boxes_count=200)
+
+// =====================================
+// Inputs
+// =====================================
+showDashboard = input.bool(true, "Show Multi-Timeframe Dashboard")
+showFibLevels = input.bool(true, "Show Fibonacci Levels")
+showZones = input.bool(true, "Show Supply / Demand / Order Block / FVG")
+useATRFilter = input.bool(true, "Use ATR Volatility Filter")
+showEntryTargets = input.bool(true, "Show Dynamic TP / SL")
+
+ema30Len = input.int(30, "EMA 30")
+ema35Len = input.int(35, "EMA 35")
+ema40Len = input.int(40, "EMA 40")
+ema45Len = input.int(45, "EMA 45")
+ema50Len = input.int(50, "EMA 50")
+ema60Len = input.int(60, "EMA 60")
+
+rsiLen = input.int(14, "RSI Length")
+macdFast = input.int(12, "MACD Fast")
+macdSlow = input.int(26, "MACD Slow")
+macdSig = input.int(9, "MACD Signal")
+atrLen = input.int(14, "ATR Length")
+atrMult = input.float(1.5, "ATR Filter Multiplier", step=0.1)
+
+fibLookback = input.int(200, "Fibonacci Lookback")
+
+tp1Pct = input.float(0.5, "TP1 %", step=0.25)
+tp2Pct = input.float(1.0, "TP2 %", step=0.25)
+tp3Pct = input.float(1.5, "TP3 %", step=0.25)
+tp4Pct = input.float(2.0, "TP4 %", step=0.25)
+tp5Pct = input.float(2.8, "TP5 %", step=0.25)
+tp6Pct = input.float(3.8, "TP6 %", step=0.25)
+slPct = input.float(1.0, "Initial SL %", step=0.25)
+
+// =====================================
+// EMA stack trend
+// =====================================
+ema30 = ta.ema(close, ema30Len)
+ema35 = ta.ema(close, ema35Len)
+ema40 = ta.ema(close, ema40Len)
+ema45 = ta.ema(close, ema45Len)
+ema50 = ta.ema(close, ema50Len)
+ema60 = ta.ema(close, ema60Len)
+
+bullishEMAStack = ema30 > ema35 and ema35 > ema40 and ema40 > ema45 and ema45 > ema50 and ema50 > ema60
+bearishEMAStack = ema30 < ema35 and ema35 < ema40 and ema40 < ema45 and ema45 < ema50 and ema50 < ema60
+
+plot(ema30, "EMA 30", color=color.new(color.teal, 0), linewidth=2)
+plot(ema35, "EMA 35", color=color.new(color.blue, 0), linewidth=2)
+plot(ema40, "EMA 40", color=color.new(color.orange, 0), linewidth=2)
+plot(ema45, "EMA 45", color=color.new(color.red, 0), linewidth=2)
+plot(ema50, "EMA 50", color=color.new(color.purple, 0), linewidth=2)
+plot(ema60, "EMA 60", color=color.new(color.gray, 0), linewidth=2)
+
+fill(ema30, ema60, color = bullishEMAStack ? color.new(color.lime, 80) : bearishEMAStack ? color.new(color.red, 80) : color.new(color.gray, 80))
+
+// =====================================
+// RSI + MACD + ATR
+// =====================================
+rsi14 = ta.rsi(close, rsiLen)
+[macdLine, signalLine, histLine] = ta.macd(close, macdFast, macdSlow, macdSig)
+atr14 = ta.atr(atrLen)
+atrFilter = useATRFilter ? atr14 > ta.ema(atr14, 20) * 0.65 : true
+
+rsiBullish = rsi14 > 55 and rsi14 < 75
+rsiBearish = rsi14 < 45 and rsi14 > 25
+macdBullish = macdLine > signalLine and histLine > 0
+macdBearish = macdLine < signalLine and histLine < 0
+
+// =====================================
+// Support and Resistance by timeframe
+// =====================================
+res15 = request.security(syminfo.tickerid, "15", ta.highest(high, 30))
+res30 = request.security(syminfo.tickerid, "30", ta.highest(high, 30))
+res1h = request.security(syminfo.tickerid, "60", ta.highest(high, 30))
+res4h = request.security(syminfo.tickerid, "240", ta.highest(high, 30))
+res1d = request.security(syminfo.tickerid, "1D", ta.highest(high, 30))
+
+sup15 = request.security(syminfo.tickerid, "15", ta.lowest(low, 30))
+sup30 = request.security(syminfo.tickerid, "30", ta.lowest(low, 30))
+sup1h = request.security(syminfo.tickerid, "60", ta.lowest(low, 30))
+sup4h = request.security(syminfo.tickerid, "240", ta.lowest(low, 30))
+sup1d = request.security(syminfo.tickerid, "1D", ta.lowest(low, 30))
+
+plot(res15, "R 15m", color=color.new(color.fuchsia, 0), linewidth=1, style=plot.style_linebr)
+plot(res30, "R 30m", color=color.new(color.orange, 0), linewidth=1, style=plot.style_linebr)
+plot(res1h, "R 1h", color=color.new(color.red, 0), linewidth=1, style=plot.style_linebr)
+plot(res4h, "R 4h", color=color.new(color.purple, 0), linewidth=1, style=plot.style_linebr)
+plot(res1d, "R 1D", color=color.new(color.blue, 0), linewidth=1, style=plot.style_linebr)
+
+plot(sup15, "S 15m", color=color.new(color.lime, 0), linewidth=1, style=plot.style_linebr)
+plot(sup30, "S 30m", color=color.new(color.green, 0), linewidth=1, style=plot.style_linebr)
+plot(sup1h, "S 1h", color=color.new(color.aqua, 0), linewidth=1, style=plot.style_linebr)
+plot(sup4h, "S 4h", color=color.new(color.gray, 0), linewidth=1, style=plot.style_linebr)
+plot(sup1d, "S 1D", color=color.new(color.yellow, 0), linewidth=1, style=plot.style_linebr)
+
+// =====================================
+// Fibonacci retracement levels
+// =====================================
+fibLevels = array.new_float()
+if barstate.isfirst
+    array.push(fibLevels, 0.236)
+    array.push(fibLevels, 0.382)
+    array.push(fibLevels, 0.5)
+    array.push(fibLevels, 0.618)
+    array.push(fibLevels, 0.786)
+    array.push(fibLevels, 1.0)
+
+fibHigh = ta.highest(high, fibLookback)
+fibLow = ta.lowest(low, fibLookback)
+fibRange = fibHigh - fibLow
+
+if showFibLevels and barstate.islast
+    for i = 0 to array.size(fibLevels) - 1
+        level = fibHigh - fibRange * array.get(fibLevels, i)
+        if not na(level)
+            line.new(bar_index - fibLookback, level, bar_index, level, color=color.new(color.white, 0), style=line.style_dashed, extend=extend.right)
+            label.new(bar_index, level, str.tostring(level, format.mintick), xloc.bar_index, yloc.price, color=color.new(color.gray, 0), textcolor=color.white, style=label.style_label_left)
+
+// =====================================
+// Price action
+// =====================================
+bodyLen = math.abs(close - open)
+priceBullishAction = close > open and bodyLen > atr14 * 0.7 and close > ta.ema(close, 20)
+priceBearishAction = close < open and bodyLen > atr14 * 0.7 and close < ta.ema(close, 20)
+
+// =====================================
+// ATR volatility filter
+// =====================================
+atrBull = atrFilter and macdBullish and priceBullishAction
+atrBear = atrFilter and macdBearish and priceBearishAction
+
+// =====================================
+// Liquidity sweep and supply/demand zones
+// =====================================
+recentSwingHigh = ta.highest(high, 25)
+recentSwingLow = ta.lowest(low, 25)
+recentHighBreak = high > recentSwingHigh[1] and close < recentSwingHigh[1]
+recentLowBreak = low < recentSwingLow[1] and close > recentSwingLow[1]
+liquiditySweepBull = recentLowBreak and close > open and close > ema30
+liquiditySweepBear = recentHighBreak and close < open and close < ema30
+
+supplyZoneTop = ta.highest(high, 20)
+demandZoneBottom = ta.lowest(low, 20)
+if showZones and barstate.islast
+    if bullishEMAStack
+        box.new(left=bar_index - 25, top=demandZoneBottom, right=bar_index, bottom=demandZoneBottom - atr14 * 2.4, border_color=color.new(color.lime, 0), bgcolor=color.new(color.lime, 75), extend=extend.right)
+    if bearishEMAStack
+        box.new(left=bar_index - 25, top=supplyZoneTop + atr14 * 2.4, right=bar_index, bottom=supplyZoneTop, border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 75), extend=extend.right)
+
+// =====================================
+// Order blocks and Fair Value Gap
+// =====================================
+obBullish = close > open and close[1] < open[1] and close > high[1] and close > ema30
+obBearish = close < open and close[1] > open[1] and close < low[1] and close < ema30
+
+if showZones and obBullish
+    box.new(left=bar_index - 2, top=math.max(open[1], close[1]), right=bar_index, bottom=math.min(open[1], close[1]), border_color=color.new(color.green, 0), bgcolor=color.new(color.green, 70), extend=extend.right)
+if showZones and obBearish
+    box.new(left=bar_index - 2, top=math.max(open[1], close[1]), right=bar_index, bottom=math.min(open[1], close[1]), border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 70), extend=extend.right)
+
+fvgBull = low[2] > high[1] and close > high[1]
+fvgBear = high[2] < low[1] and close < low[1]
+
+if showZones and fvgBull
+    box.new(left=bar_index - 2, top=high[1], right=bar_index, bottom=low[2], border_color=color.new(color.lime, 0), bgcolor=color.new(color.lime, 50), extend=extend.right)
+if showZones and fvgBear
+    box.new(left=bar_index - 2, top=high[2], right=bar_index, bottom=low[1], border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 50), extend=extend.right)
+
+// =====================================
+// Supertrend-like trend filter
+// =====================================
+atrSuper = ta.atr(10)
+mult = 2.0
+hl2 = (high + low) / 2
+basicUpper = hl2 + mult * atrSuper
+basicLower = hl2 - mult * atrSuper
+
+var float finalUpper = na
+var float finalLower = na
+
+if bar_index == 0
+    finalUpper := basicUpper
+    finalLower := basicLower
+else
+    finalUpper := basicUpper > finalUpper[1] and close[1] <= finalUpper[1] ? basicUpper : finalUpper[1]
+    finalLower := basicLower < finalLower[1] and close[1] >= finalLower[1] ? basicLower : finalLower[1]
+
+superTrend = close > finalUpper[1] ? 1 : close < finalLower[1] ? -1 : nz(superTrend[1], 1)
+plot(superTrend == 1 ? finalUpper : finalLower, "SuperTrend", color = superTrend == 1 ? color.new(color.lime, 0) : color.new(color.red, 0), linewidth=2)
+
+// =====================================
+// VWAP and volume strength
+// =====================================
+vwapPrice = ta.vwap
+volumeStrength = (close - vwapPrice) / atr14
+plot(vwapPrice, "VWAP", color=color.new(color.orange, 0), linewidth=1, style=plot.style_line)
+plot(volumeStrength, title="Volume / VWAP Strength", color=color.new(color.yellow, 0), linewidth=1, display=display.pane)
+
+// =====================================
+// Signal engine
+// =====================================
+longSignal = bullishEMAStack and rsiBullish and macdBullish and close > ema30 and close > vwapPrice and atrFilter and (priceBullishAction or liquiditySweepBull)
+shortSignal = bearishEMAStack and rsiBearish and macdBearish and close < ema30 and close < vwapPrice and atrFilter and (priceBearishAction or liquiditySweepBear)
+
+signalScore = 0
+signalScore += bullishEMAStack ? 25 : 0
+signalScore += bearishEMAStack ? 25 : 0
+signalScore += rsiBullish ? 15 : rsiBearish ? 15 : 0
+signalScore += macdBullish ? 15 : macdBearish ? 15 : 0
+signalScore += atrFilter ? 10 : 0
+signalScore += close > vwapPrice ? 10 : close < vwapPrice ? 10 : 0
+
+precisionModel = signalScore >= 70 ? "High Probability" : signalScore >= 50 ? "Medium Probability" : "Low Confidence"
+
+// =====================================
+// Entry, target and stop calculations
+// =====================================
+var float entryPrice = na
+var float longTP1 = na
+var float longTP2 = na
+var float longTP3 = na
+var float longTP4 = na
+var float longTP5 = na
+var float longTP6 = na
+var float longSL = na
+var float shortTP1 = na
+var float shortTP2 = na
+var float shortTP3 = na
+var float shortTP4 = na
+var float shortTP5 = na
+var float shortTP6 = na
+var float shortSL = na
+
+if longSignal
+    entryPrice := close
+    longTP1 := close * (1 + tp1Pct / 100)
+    longTP2 := close * (1 + tp2Pct / 100)
+    longTP3 := close * (1 + tp3Pct / 100)
+    longTP4 := close * (1 + tp4Pct / 100)
+    longTP5 := close * (1 + tp5Pct / 100)
+    longTP6 := close * (1 + tp6Pct / 100)
+    longSL := close * (1 - slPct / 100)
+
+if shortSignal
+    entryPrice := close
+    shortTP1 := close * (1 - tp1Pct / 100)
+    shortTP2 := close * (1 - tp2Pct / 100)
+    shortTP3 := close * (1 - tp3Pct / 100)
+    shortTP4 := close * (1 - tp4Pct / 100)
+    shortTP5 := close * (1 - tp5Pct / 100)
+    shortTP6 := close * (1 - tp6Pct / 100)
+    shortSL := close * (1 + slPct / 100)
+
+if showEntryTargets and barstate.islast and (longSignal or shortSignal)
+    if longSignal
+        label.new(bar_index, close, "BUY\nEntry: " + str.tostring(close, format.mintick) + "\nSL: " + str.tostring(longSL, format.mintick) + "\nTP1: " + str.tostring(longTP1, format.mintick), style=label.style_label_down, color=color.new(color.lime, 0), textcolor=color.white)
+        line.new(bar_index - 20, longSL, bar_index, longSL, color=color.new(color.red, 0), style=line.style_solid, extend=extend.right)
+        line.new(bar_index - 20, longTP1, bar_index, longTP1, color=color.new(color.green, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, longTP2, bar_index, longTP2, color=color.new(color.green, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, longTP3, bar_index, longTP3, color=color.new(color.green, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, longTP4, bar_index, longTP4, color=color.new(color.green, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, longTP5, bar_index, longTP5, color=color.new(color.green, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, longTP6, bar_index, longTP6, color=color.new(color.green, 0), style=line.style_dashed, extend=extend.right)
+    if shortSignal
+        label.new(bar_index, close, "SELL\nEntry: " + str.tostring(close, format.mintick) + "\nSL: " + str.tostring(shortSL, format.mintick) + "\nTP1: " + str.tostring(shortTP1, format.mintick), style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white)
+        line.new(bar_index - 20, shortSL, bar_index, shortSL, color=color.new(color.lime, 0), style=line.style_solid, extend=extend.right)
+        line.new(bar_index - 20, shortTP1, bar_index, shortTP1, color=color.new(color.red, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, shortTP2, bar_index, shortTP2, color=color.new(color.red, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, shortTP3, bar_index, shortTP3, color=color.new(color.red, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, shortTP4, bar_index, shortTP4, color=color.new(color.red, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, shortTP5, bar_index, shortTP5, color=color.new(color.red, 0), style=line.style_dashed, extend=extend.right)
+        line.new(bar_index - 20, shortTP6, bar_index, shortTP6, color=color.new(color.red, 0), style=line.style_dashed, extend=extend.right)
+
+plotshape(longSignal, title="Buy Signal", style=shape.labelup, location=location.belowbar, color=color.new(color.lime, 0), text="BUY", textcolor=color.white, size=size.small)
+plotshape(shortSignal, title="Sell Signal", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.small)
+
+// =====================================
+// Multi-timeframe dashboard
+// =====================================
+mtf15 = request.security(syminfo.tickerid, "15", ta.ema(close, ema30Len) > ta.ema(close, ema35Len) and ta.ema(close, ema35Len) > ta.ema(close, ema40Len) and ta.ema(close, ema40Len) > ta.ema(close, ema45Len) and ta.ema(close, ema45Len) > ta.ema(close, ema50Len) and ta.ema(close, ema50Len) > ta.ema(close, ema60Len) ? 1 : -1)
+mtf30 = request.security(syminfo.tickerid, "30", ta.ema(close, ema30Len) > ta.ema(close, ema35Len) and ta.ema(close, ema35Len) > ta.ema(close, ema40Len) and ta.ema(close, ema40Len) > ta.ema(close, ema45Len) and ta.ema(close, ema45Len) > ta.ema(close, ema50Len) and ta.ema(close, ema50Len) > ta.ema(close, ema60Len) ? 1 : -1)
+mtf1h = request.security(syminfo.tickerid, "60", ta.ema(close, ema30Len) > ta.ema(close, ema35Len) and ta.ema(close, ema35Len) > ta.ema(close, ema40Len) and ta.ema(close, ema40Len) > ta.ema(close, ema45Len) and ta.ema(close, ema45Len) > ta.ema(close, ema50Len) and ta.ema(close, ema50Len) > ta.ema(close, ema60Len) ? 1 : -1)
+mtf4h = request.security(syminfo.tickerid, "240", ta.ema(close, ema30Len) > ta.ema(close, ema35Len) and ta.ema(close, ema35Len) > ta.ema(close, ema40Len) and ta.ema(close, ema40Len) > ta.ema(close, ema45Len) and ta.ema(close, ema45Len) > ta.ema(close, ema50Len) and ta.ema(close, ema50Len) > ta.ema(close, ema60Len) ? 1 : -1)
+mtf1d = request.security(syminfo.tickerid, "1D", ta.ema(close, ema30Len) > ta.ema(close, ema35Len) and ta.ema(close, ema35Len) > ta.ema(close, ema40Len) and ta.ema(close, ema40Len) > ta.ema(close, ema45Len) and ta.ema(close, ema45Len) > ta.ema(close, ema50Len) and ta.ema(close, ema50Len) > ta.ema(close, ema60Len) ? 1 : -1)
+
+var table mtfTable = table.new(position.top_right, 2, 6, border_width=1)
+if showDashboard and barstate.islast
+    table.cell(mtfTable, 0, 0, "TF", bgcolor=color.gray, text_color=color.white)
+    table.cell(mtfTable, 1, 0, "Trend", bgcolor=color.gray, text_color=color.white)
+    table.cell(mtfTable, 0, 1, "15m", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(mtfTable, 1, 1, mtf15 > 0 ? "Bullish" : mtf15 < 0 ? "Bearish" : "Neutral", bgcolor=mtf15 > 0 ? color.new(color.green, 0) : mtf15 < 0 ? color.new(color.red, 0) : color.new(color.gray, 0), text_color=color.white)
+    table.cell(mtfTable, 0, 2, "30m", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(mtfTable, 1, 2, mtf30 > 0 ? "Bullish" : mtf30 < 0 ? "Bearish" : "Neutral", bgcolor=mtf30 > 0 ? color.new(color.green, 0) : mtf30 < 0 ? color.new(color.red, 0) : color.new(color.gray, 0), text_color=color.white)
+    table.cell(mtfTable, 0, 3, "1H", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(mtfTable, 1, 3, mtf1h > 0 ? "Bullish" : mtf1h < 0 ? "Bearish" : "Neutral", bgcolor=mtf1h > 0 ? color.new(color.green, 0) : mtf1h < 0 ? color.new(color.red, 0) : color.new(color.gray, 0), text_color=color.white)
+    table.cell(mtfTable, 0, 4, "4H", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(mtfTable, 1, 4, mtf4h > 0 ? "Bullish" : mtf4h < 0 ? "Bearish" : "Neutral", bgcolor=mtf4h > 0 ? color.new(color.green, 0) : mtf4h < 0 ? color.new(color.red, 0) : color.new(color.gray, 0), text_color=color.white)
+    table.cell(mtfTable, 0, 5, "1D", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(mtfTable, 1, 5, mtf1d > 0 ? "Bullish" : mtf1d < 0 ? "Bearish" : "Neutral", bgcolor=mtf1d > 0 ? color.new(color.green, 0) : mtf1d < 0 ? color.new(color.red, 0) : color.new(color.gray, 0), text_color=color.white)
+
+// =====================================
+// Precision confirmation label
+// =====================================
+if barstate.islast
+    label.new(bar_index, high + atr14 * 1.1, "Precision: " + precisionModel + "\nRSI: " + str.tostring(rsi14, format.mintick) + "\nMACD: " + str.tostring(macdLine - signalLine, format.mintick) + "\nATR: " + str.tostring(atr14, format.mintick), style=label.style_label_down, color=color.new(color.blue, 0), textcolor=color.white)
+
+// =====================================
+// Alerts
+// =====================================
+alertcondition(longSignal, title="Long Signal", message="Long Signal triggered")
+alertcondition(shortSignal, title="Short Signal", message="Short Signal triggered")
+
+// =====================================
+// End of script
+// =====================================
